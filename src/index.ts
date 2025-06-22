@@ -33,7 +33,7 @@ export default {
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const sites: SiteCheck[] = [
-      { name: 'main', url: 'https://teyvatarchive.online', timeout: 10000 },
+      { name: 'main', url: 'https://teyvatarchive.online/api/health', timeout: 10000 },
       { name: 'dashboard', url: 'https://dashboard.teyvatarchive.online', timeout: 10000 },
       { name: 'api', url: 'https://server.teyvatarchive.online', timeout: 10000 },
       { name: 'cdn', url: 'https://cdn.teyvatarchive.online/images/chapterIcons/UI_ChapterIcon_AkaFes.png', timeout: 10000 }
