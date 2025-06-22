@@ -26,7 +26,10 @@ export async function checkSite(site: SiteCheck, env: Env): Promise<void> {
     
     const response = await fetch(site.url, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'TeyvatArchive-Uptime-Monitor/1.0' }
+      headers: { 
+        'User-Agent': 'Mozilla/5.0 (compatible; TeyvatArchive-Monitor/1.0)',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
     });
     
     clearTimeout(timeoutId);
@@ -40,12 +43,39 @@ export async function checkSite(site: SiteCheck, env: Env): Promise<void> {
       timestamp
     };
     
+    // Always update current status (4 writes per check cycle)
     await env.UPTIME_KV.put(`current_${site.name}`, JSON.stringify(data));
-    await env.UPTIME_KV.put(
-      `history_${site.name}_${timestamp}`, 
-      JSON.stringify(data),
-      { expirationTtl: 30 * 24 * 60 * 60 }
-    );
+    
+    // Only store history on status changes or every 2 hours
+    const lastHistoryKey = `last_history_${site.name}`;
+    const lastHistory = await env.UPTIME_KV.get(lastHistoryKey);
+    
+    let shouldStore = false;
+    
+    if (!lastHistory) {
+      shouldStore = true; // First time
+    } else {
+      try {
+        const lastData: UptimeData = JSON.parse(lastHistory);
+        const timeDiff = timestamp - lastData.timestamp;
+        const statusChanged = lastData.status !== status;        const twoHoursPassed = timeDiff > 2 * 60 * 60 * 1000; // 2 hours
+        
+        shouldStore = statusChanged || twoHoursPassed;
+      } catch (error) {
+        // Invalid JSON in lastHistory, treat as first time
+        console.warn(`Invalid JSON in last_history for ${site.name}:`, error);
+        shouldStore = true;
+      }
+    }
+
+    if (shouldStore) {
+      await env.UPTIME_KV.put(
+        `history_${site.name}_${timestamp}`, 
+        JSON.stringify(data),
+        { expirationTtl: 7 * 24 * 60 * 60 } // 7 days instead of 30
+      );
+      await env.UPTIME_KV.put(lastHistoryKey, JSON.stringify(data));
+    }
     
   } catch (error: any) {
     const data: UptimeData = {
@@ -56,11 +86,37 @@ export async function checkSite(site: SiteCheck, env: Env): Promise<void> {
     };
     
     await env.UPTIME_KV.put(`current_${site.name}`, JSON.stringify(data));
-    await env.UPTIME_KV.put(
-      `history_${site.name}_${timestamp}`, 
-      JSON.stringify(data),
-      { expirationTtl: 30 * 24 * 60 * 60 }
-    );
+    
+    // Same logic for error cases
+    const lastHistoryKey = `last_history_${site.name}`;
+    const lastHistory = await env.UPTIME_KV.get(lastHistoryKey);
+    
+    let shouldStore = false;
+    
+    if (!lastHistory) {
+      shouldStore = true;
+    } else {
+      try {
+        const lastData: UptimeData = JSON.parse(lastHistory);
+        const timeDiff = timestamp - lastData.timestamp;
+        const statusChanged = lastData.status !== 'down';        const twoHoursPassed = timeDiff > 2 * 60 * 60 * 1000;
+        
+        shouldStore = statusChanged || twoHoursPassed;
+      } catch (error) {
+        // Invalid JSON in lastHistory, treat as first time
+        console.warn(`Invalid JSON in last_history for ${site.name}:`, error);
+        shouldStore = true;
+      }
+    }
+
+    if (shouldStore) {
+      await env.UPTIME_KV.put(
+        `history_${site.name}_${timestamp}`, 
+        JSON.stringify(data),
+        { expirationTtl: 7 * 24 * 60 * 60 }
+      );
+      await env.UPTIME_KV.put(lastHistoryKey, JSON.stringify(data));
+    }
   }
 }
 
@@ -73,7 +129,6 @@ export async function getStatus(env: Env): Promise<Response> {
     try {
       statuses[site] = data ? JSON.parse(data) : null;
     } catch (error) {
-      // Handle invalid JSON gracefully
       console.warn(`Invalid JSON data for site ${site}:`, error);
       statuses[site] = null;
     }
@@ -101,7 +156,6 @@ export async function getHistory(env: Env, siteName: string | null): Promise<Res
       try {
         history.push(JSON.parse(data));
       } catch (error) {
-        // Skip invalid JSON entries
         console.warn(`Invalid JSON data for key ${key.name}:`, error);
       }
     }

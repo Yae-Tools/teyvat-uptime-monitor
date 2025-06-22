@@ -115,12 +115,16 @@ describe('Worker Integration Tests', () => {
       MONITORED_SITES.forEach((site, index) => {
         expect(mockFetch).toHaveBeenNthCalledWith(index + 1, site.url, {
           signal: expect.any(AbortSignal),
-          headers: { 'User-Agent': 'TeyvatArchive-Uptime-Monitor/1.0' }
+          headers: { 
+            'User-Agent': 'Mozilla/5.0 (compatible; TeyvatArchive-Monitor/1.0)',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          }
         });
       });
 
       // Check that KV storage was called for each site
-      expect(mockEnv.UPTIME_KV.put).toHaveBeenCalledTimes(MONITORED_SITES.length * 2);
+      // Each site makes 3 put calls: current, history, last_history (since it's first time)
+      expect(mockEnv.UPTIME_KV.put).toHaveBeenCalledTimes(MONITORED_SITES.length * 3);
 
       // Restore Date.now
       Date.now = originalDateNow;
@@ -146,7 +150,8 @@ describe('Worker Integration Tests', () => {
 
       // Assert
       expect(mockFetch).toHaveBeenCalledTimes(4);
-      expect(mockEnv.UPTIME_KV.put).toHaveBeenCalledTimes(8); // 4 sites * 2 calls each
+      // Each site makes 3 put calls: current, history, last_history (since it's first time)
+      expect(mockEnv.UPTIME_KV.put).toHaveBeenCalledTimes(12); // 4 sites * 3 calls each
 
       // Verify that both current and history data was stored for each site
       expect(mockEnv.UPTIME_KV.put).toHaveBeenCalledWith(
